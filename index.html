@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QM Simulator: ψ = R · Y</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; margin: 18px; background:#fafafa; color:#222; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  .formula { font-family: "Times New Roman", serif; font-size: 18px; background:#f5f5f5; padding:8px 10px; border-radius:8px; display:inline-block; }
+  .note { line-height: 1.45; max-width: 1050px; }
+  .controls { display:flex; gap:16px; flex-wrap:wrap; align-items:center; margin:16px 0; padding:12px; background:white; border:1px solid #ddd; border-radius:12px; }
+  select, input, button { font-size:16px; }
+  input[type="range"] { width:280px; }
+  .grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap:14px; }
+  .card { background:white; border:1px solid #ddd; border-radius:12px; padding:12px; }
+  svg { width:100%; height:280px; border:1px solid #eee; background:white; border-radius:10px; display:block; }
+  .small { color:#555; font-size:14px; line-height:1.35; }
+  .axis { stroke:#ddd; stroke-width:1; }
+  .curve { fill:none; stroke:#1769aa; stroke-width:2.5; }
+  .marker { stroke:#d22; stroke-width:2; }
+  .shapePlus { fill:rgba(23,105,170,0.12); stroke:#1769aa; stroke-width:2.5; }
+  .shapeMinus { fill:rgba(210,34,34,0.12); stroke:#d22; stroke-width:2.5; }
+  .text { font-size:15px; fill:#222; }
+</style>
+</head>
+<body>
+<h1>Интерактивная модель: ψ(ρ,θ,φ) = R(ρ) · Y<sub>l</sub><sup>m</sup>(θ,φ)</h1>
+
+<p><span class="formula">ψ(ρ,θ,φ) = R(ρ) · Y<sub>l</sub><sup>m</sup>(θ,φ)</span></p>
+
+<p class="note"><b>Смысл:</b> слева показана радиальная часть <b>R(ρ)</b>, в центре — угловая форма <b>Y</b>, справа — их произведение. Двигай ρ: угловая форма не меняется, меняется только масштаб полной волновой функции.</p>
+
+<div class="controls">
+  <label>l:
+    <select id="l">
+      <option value="0">0</option>
+      <option value="1">1</option>
+      <option value="2">2</option>
+    </select>
+  </label>
+  <label>m:
+    <select id="m"></select>
+  </label>
+  <label>ρ:
+    <input id="rho" type="range" min="0.05" max="20" step="0.01" value="4">
+    <span id="rhoVal">4.00</span>
+  </label>
+  <button id="play">▶ анимация</button>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h3>1) Радиальная часть R(ρ)</h3>
+    <svg id="radial" viewBox="0 0 640 360"></svg>
+    <p class="small">Вертикальная линия показывает выбранное ρ. Если R(ρ)=0, справа почти ничего нет: это радиальный узел.</p>
+  </div>
+  <div class="card">
+    <h3>2) Угловая форма Y<sub>l</sub><sup>m</sup>(θ,φ)</h3>
+    <svg id="angular" viewBox="0 0 640 360"></svg>
+    <p class="small">Это сечение при φ=0. Угловая часть задаёт форму по направлениям и не зависит от ρ.</p>
+  </div>
+  <div class="card">
+    <h3>3) Произведение R(ρ) · Y<sub>l</sub><sup>m</sup></h3>
+    <svg id="product" viewBox="0 0 640 360"></svg>
+    <p class="small">Та же форма, но умноженная на текущее значение R(ρ): она растёт, уменьшается и меняет знак.</p>
+  </div>
+</div>
+
+<script>
+const lSel = document.getElementById("l");
+const mSel = document.getElementById("m");
+const rhoSlider = document.getElementById("rho");
+const rhoVal = document.getElementById("rhoVal");
+const playBtn = document.getElementById("play");
+let playing = false;
+let timer = null;
+
+function fillM() {
+  const l = Number(lSel.value);
+  mSel.innerHTML = "";
+  for (let m=0; m<=l; m++) {
+    const opt = document.createElement("option");
+    opt.value = String(m);
+    opt.textContent = String(m);
+    mSel.appendChild(opt);
+  }
+}
+
+function j(l, x) {
+  if (Math.abs(x) < 1e-5) {
+    if (l === 0) return 1 - x*x/6;
+    if (l === 1) return x/3;
+    if (l === 2) return x*x/15;
+  }
+  if (l === 0) return Math.sin(x)/x;
+  if (l === 1) return Math.sin(x)/(x*x) - Math.cos(x)/x;
+  if (l === 2) return (3/(x*x*x) - 1/x)*Math.sin(x) - 3*Math.cos(x)/(x*x);
+  return 0;
+}
+
+function Y(l, m, th) {
+  const c = Math.cos(th), s = Math.sin(th);
+  if (l === 0 && m === 0) return 1;
+  if (l === 1 && m === 0) return c;
+  if (l === 1 && m === 1) return s;
+  if (l === 2 && m === 0) return 0.5*(3*c*c - 1);
+  if (l === 2 && m === 1) return s*c;
+  if (l === 2 && m === 2) return s*s;
+  return 0;
+}
+
+function el(name, attrs={}) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+function clear(svg) {
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+}
+
+function addText(svg, x, y, text) {
+  const t = el("text", {x:x, y:y, class:"text"});
+  t.textContent = text;
+  svg.appendChild(t);
+}
+
+function drawRadial() {
+  const svg = document.getElementById("radial");
+  clear(svg);
+  const l = Number(lSel.value);
+  const rho = Number(rhoSlider.value);
+  const x0=55, x1=615, y0=180, scale=120;
+  svg.appendChild(el("line",{x1:x0,y1:y0,x2:x1,y2:y0,class:"axis"}));
+  svg.appendChild(el("line",{x1:x0,y1:25,x2:x0,y2:325,class:"axis"}));
+  let d="";
+  for (let i=0; i<=700; i++) {
+    const x = 0.05 + (20-0.05)*i/700;
+    const px = x0 + (x/20)*(x1-x0);
+    const py = y0 - j(l,x)*scale;
+    d += (i===0 ? "M" : "L") + px.toFixed(2) + " " + py.toFixed(2) + " ";
+  }
+  svg.appendChild(el("path",{d:d,class:"curve"}));
+  const px = x0 + (rho/20)*(x1-x0);
+  svg.appendChild(el("line",{x1:px,y1:25,x2:px,y2:325,class:"marker"}));
+  addText(svg, 70, 35, "R(ρ) = j_" + l + "(ρ)");
+  addText(svg, 70, 340, "ρ = " + rho.toFixed(2) + ", R = " + j(l,rho).toFixed(3));
+}
+
+function polarPath(scaleFactor) {
+  const l = Number(lSel.value);
+  const m = Number(mSel.value);
+  const cx=320, cy=180;
+  let d="";
+  for (let i=0; i<=720; i++) {
+    const th = 2*Math.PI*i/720;
+    const val = Y(l,m,th);
+    const rr = Math.abs(val) * scaleFactor;
+    const px = cx + rr*Math.sin(th);
+    const py = cy - rr*Math.cos(th);
+    d += (i===0 ? "M" : "L") + px.toFixed(2) + " " + py.toFixed(2) + " ";
+  }
+  return d + "Z";
+}
+
+function drawAngular() {
+  const svg = document.getElementById("angular");
+  clear(svg);
+  const l = Number(lSel.value), m = Number(mSel.value);
+  svg.appendChild(el("circle",{cx:320,cy:180,r:135,fill:"none",class:"axis"}));
+  svg.appendChild(el("line",{x1:150,y1:180,x2:490,y2:180,class:"axis"}));
+  svg.appendChild(el("line",{x1:320,y1:20,x2:320,y2:340,class:"axis"}));
+  svg.appendChild(el("path",{d:polarPath(135),class:"shapePlus"}));
+  addText(svg, 30, 35, "Y_" + l + "^" + m + "(θ,φ), сечение φ=0");
+}
+
+function drawProduct() {
+  const svg = document.getElementById("product");
+  clear(svg);
+  const l = Number(lSel.value);
+  const rho = Number(rhoSlider.value);
+  const R = j(l,rho);
+  const scale = Math.min(170, Math.max(5, Math.abs(R)*280));
+  svg.appendChild(el("circle",{cx:320,cy:180,r:135,fill:"none",class:"axis"}));
+  svg.appendChild(el("line",{x1:150,y1:180,x2:490,y2:180,class:"axis"}));
+  svg.appendChild(el("line",{x1:320,y1:20,x2:320,y2:340,class:"axis"}));
+  svg.appendChild(el("path",{d:polarPath(scale),class:(R>=0 ? "shapePlus" : "shapeMinus")}));
+  addText(svg, 30, 35, "масштаб = R(ρ) = " + R.toFixed(3));
+  addText(svg, 30, 58, "знак: " + (R>=0 ? "плюс" : "минус"));
+}
+
+function drawAll() {
+  rhoVal.textContent = Number(rhoSlider.value).toFixed(2);
+  drawRadial();
+  drawAngular();
+  drawProduct();
+}
+
+lSel.addEventListener("change", () => { fillM(); drawAll(); });
+mSel.addEventListener("change", drawAll);
+rhoSlider.addEventListener("input", drawAll);
+
+playBtn.addEventListener("click", () => {
+  playing = !playing;
+  playBtn.textContent = playing ? "⏸ стоп" : "▶ анимация";
+  if (playing) {
+    timer = setInterval(() => {
+      let v = Number(rhoSlider.value) + 0.05;
+      if (v > 20) v = 0.05;
+      rhoSlider.value = v.toFixed(2);
+      drawAll();
+    }, 35);
+  } else {
+    clearInterval(timer);
+  }
+});
+
+fillM();
+drawAll();
+</script>
+</body>
+</html>
