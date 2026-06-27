@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Демо: как l меняет форму орбитали</title>
+<style>
+:root{
+  --bg:#f7f7f8; --card:#fff; --text:#202124; --muted:#5f6368; --line:#dadce0;
+  --blue:#1769aa; --red:#c5221f; --green:#188038;
+}
+*{box-sizing:border-box}
+body{margin:0;padding:18px;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:25px;margin:0 0 8px}
+h2{font-size:19px;margin:0 0 10px}
+p{line-height:1.45}
+.formula{font-family:"Times New Roman",serif;font-size:21px;background:#eee;padding:8px 10px;border-radius:9px;display:inline-block}
+.controls,.card{background:var(--card);border:1px solid var(--line);border-radius:14px}
+.controls{padding:14px;margin:14px 0;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+label{font-weight:650}
+input[type=range]{width:250px;vertical-align:middle}
+select,button,input{font-size:16px}
+button{border:1px solid var(--line);background:#f1f3f4;border-radius:10px;padding:8px 12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{padding:14px}
+svg{width:100%;height:420px;background:white;border:1px solid #eee;border-radius:12px;display:block}
+.small{font-size:14px;color:var(--muted)}
+.axis{stroke:#ddd;stroke-width:1}
+.shape{fill:rgba(23,105,170,.13);stroke:var(--blue);stroke-width:2.5}
+.shape2{fill:rgba(197,34,31,.11);stroke:var(--red);stroke-width:2.5}
+.node{stroke:var(--red);stroke-width:2;stroke-dasharray:5 5;fill:none}
+.txt{font-size:15px;fill:#202124}
+.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 9px;margin-right:6px;background:#fff}
+.explain{background:#fff;border-left:5px solid var(--blue);padding:12px 14px;border-radius:10px;margin-top:12px}
+@media(max-width:820px){.grid{grid-template-columns:1fr} svg{height:350px} input[type=range]{width:190px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Как квантовое число l меняет тип углового распределения</h1>
+<p><span class="formula">ψ(r,θ,φ)=R(r) · Y<sub>l</sub><sup>m</sup>(θ,φ)</span></p>
+<p><b>Идея:</b> здесь мы специально смотрим только на угловую часть <b>Y<sub>l</sub><sup>m</sup></b>. Она показывает форму по направлениям. Меняем <b>l</b> — меняется тип формы: s, p, d, f. Меняем <b>m</b> — остаёмся в том же семействе, но меняется конкретный угловой вариант.</p>
+
+<div class="controls">
+  <label>l:
+    <input id="lRange" type="range" min="0" max="3" step="1" value="0">
+    <span id="lVal">0</span>
+  </label>
+  <label>m:
+    <input id="mRange" type="range" min="0" max="0" step="1" value="0">
+    <span id="mVal">0</span>
+  </label>
+  <button id="playL">▶ анимация l</button>
+  <button id="playM">▶ анимация m</button>
+  <button id="probBtn">Показать |Y|²</button>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>1) Угловая форма Y<sub>l</sub><sup>m</sup>(θ,φ)</h2>
+    <svg id="angular" viewBox="0 0 640 430"></svg>
+    <p class="small">Это сечение угловой функции. Оно не показывает траекторию электрона. Оно показывает, в каких направлениях амплитуда больше или меньше.</p>
+  </div>
+  <div class="card">
+    <h2>2) Что значит выбранное l</h2>
+    <div id="badges"></div>
+    <div id="explanation" class="explain"></div>
+    <p class="small"><b>Ключ:</b> l задаёт тип углового распределения. m задаёт вариант внутри этого типа. Радиальная часть R(r) здесь специально убрана, чтобы не смешивать две идеи.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <h2>Краткая физическая трактовка</h2>
+  <p id="summary"></p>
+</div>
+</div>
+
+<script>
+const lRange=document.getElementById("lRange");
+const mRange=document.getElementById("mRange");
+const lVal=document.getElementById("lVal");
+const mVal=document.getElementById("mVal");
+const svg=document.getElementById("angular");
+const explanation=document.getElementById("explanation");
+const summary=document.getElementById("summary");
+const badges=document.getElementById("badges");
+const playL=document.getElementById("playL");
+const playM=document.getElementById("playM");
+const probBtn=document.getElementById("probBtn");
+
+let showProb=false, timerL=null, timerM=null;
+
+const names={0:"s",1:"p",2:"d",3:"f"};
+const descriptions={
+0:"l=0: s-тип. Угловое распределение одинаковое во все стороны. Нет выделенного направления.",
+1:"l=1: p-тип. Появляется направленная форма с двумя основными областями и узловым направлением/плоскостью.",
+2:"l=2: d-тип. Угловое распределение сложнее: появляются дополнительные лепестки и узловые направления.",
+3:"l=3: f-тип. Ещё более сложное угловое распределение с большим числом областей и узлов."
+};
+
+function Y(l,m,th){
+  const c=Math.cos(th), s=Math.sin(th);
+  if(l===0) return 1;
+  if(l===1 && m===0) return c;
+  if(l===1 && m===1) return s;
+  if(l===2 && m===0) return 0.5*(3*c*c-1);
+  if(l===2 && m===1) return s*c;
+  if(l===2 && m===2) return s*s;
+  if(l===3 && m===0) return 0.5*(5*c*c*c-3*c);
+  if(l===3 && m===1) return s*(5*c*c-1);
+  if(l===3 && m===2) return s*s*c;
+  if(l===3 && m===3) return s*s*s;
+  return 0;
+}
+
+function el(name, attrs={}){
+  const e=document.createElementNS("http://www.w3.org/2000/svg",name);
+  for(const k in attrs)e.setAttribute(k,attrs[k]);
+  return e;
+}
+function clear(){while(svg.firstChild)svg.removeChild(svg.firstChild)}
+function text(x,y,t){const e=el("text",{x,y,class:"txt"}); e.textContent=t; svg.appendChild(e)}
+function polarPath(scale, power=1){
+  const l=+lRange.value,m=+mRange.value,cx=320,cy=210;
+  let d="";
+  for(let i=0;i<=720;i++){
+    const th=2*Math.PI*i/720;
+    let val=Math.abs(Y(l,m,th));
+    if(power===2) val=val*val;
+    const r=val*scale;
+    const x=cx+r*Math.sin(th), y=cy-r*Math.cos(th);
+    d+=(i===0?"M":"L")+x.toFixed(2)+" "+y.toFixed(2)+" ";
+  }
+  return d+"Z";
+}
+function draw(){
+  const l=+lRange.value,m=+mRange.value;
+  lVal.textContent=l; mVal.textContent=m;
+  mRange.max=l;
+  if(+mRange.value>l){mRange.value=l; mVal.textContent=l;}
+  clear();
+  const cx=320,cy=210;
+  svg.appendChild(el("circle",{cx,cy,r:150,fill:"none",class:"axis"}));
+  svg.appendChild(el("line",{x1:115,y1:cy,x2:525,y2:cy,class:"axis"}));
+  svg.appendChild(el("line",{x1:cx,y1:35,x2:cx,y2:385,class:"axis"}));
+  svg.appendChild(el("path",{d:polarPath(showProb?170:155,showProb?2:1),class:showProb?"shape2":"shape"}));
+  text(24,34, showProb ? "|Y_"+l+"^"+m+"(θ,φ)|²: плотность вероятности по направлениям" : "Y_"+l+"^"+m+"(θ,φ): амплитуда по направлениям");
+  text(24,58,"тип: "+names[l]+"-состояние, l="+l+", m="+m);
+  badges.innerHTML=
+    '<span class="badge">l = '+l+'</span>'+
+    '<span class="badge">тип = '+names[l]+'</span>'+
+    '<span class="badge">m = '+m+'</span>'+
+    '<span class="badge">'+(showProb?'режим |Y|²':'режим Y')+'</span>';
+  explanation.innerHTML =
+    "<p><b>Техническая форма:</b> Y<sub>"+l+"</sub><sup>"+m+"</sup>(θ,φ)</p>"+
+    "<p><b>Словесно:</b> это угловая часть волновой функции. Она зависит только от направления, то есть от углов θ и φ.</p>"+
+    "<p>"+descriptions[l]+"</p>"+
+    "<p><b>Что делает m:</b> m не меняет семейство "+names[l]+". Оно выбирает конкретный угловой вариант внутри этого семейства.</p>";
+  summary.innerHTML =
+    "На этой модели видно, что <b>l отвечает за тип углового распределения</b>. "+
+    "При l=0 получается s-тип, при l=1 — p-тип, при l=2 — d-тип, при l=3 — f-тип. "+
+    "Это не траектория частицы, а форма угловой амплитуды. "+
+    "Если включить режим |Y|², модель показывает уже распределение вероятности по направлениям.";
+}
+
+lRange.addEventListener("input",()=>{mRange.max=+lRange.value; if(+mRange.value>+lRange.value)mRange.value=lRange.value; draw();});
+mRange.addEventListener("input",draw);
+probBtn.addEventListener("click",()=>{showProb=!showProb; probBtn.textContent=showProb?"Показать Y":"Показать |Y|²"; draw();});
+
+playL.addEventListener("click",()=>{
+  if(timerL){clearInterval(timerL);timerL=null;playL.textContent="▶ анимация l";return;}
+  playL.textContent="⏸ стоп l";
+  timerL=setInterval(()=>{lRange.value=(+lRange.value+1)%4; mRange.max=+lRange.value; if(+mRange.value>+lRange.value)mRange.value=lRange.value; draw();},900);
+});
+playM.addEventListener("click",()=>{
+  if(timerM){clearInterval(timerM);timerM=null;playM.textContent="▶ анимация m";return;}
+  playM.textContent="⏸ стоп m";
+  timerM=setInterval(()=>{const l=+lRange.value; mRange.value=(+mRange.value+1)%(l+1); draw();},800);
+});
+draw();
+</script>
+</body>
+</html>
