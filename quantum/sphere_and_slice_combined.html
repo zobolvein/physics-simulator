@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kugel und Orbitalschnitt</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#202124;--muted:#5f6368;--line:#dadce0;--blue:#1769aa;--red:#c5221f;--green:#188038}
+*{box-sizing:border-box}
+body{margin:0;padding:18px;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.wrap{max-width:1220px;margin:0 auto}
+h1{font-size:26px;margin:0 0 8px}
+h2{font-size:19px;margin:0 0 10px}
+p{line-height:1.45}
+.formula{display:inline-block;padding:8px 10px;border-radius:9px;background:#eee;font-family:"Times New Roman",serif;font-size:21px}
+.controls,.card{background:var(--card);border:1px solid var(--line);border-radius:14px}
+.controls{padding:14px;margin:14px 0;display:flex;flex-wrap:wrap;align-items:center;gap:16px}
+label{font-weight:650}
+input[type=range]{width:210px;vertical-align:middle}
+button,input{font-size:16px}
+button{border:1px solid var(--line);background:#f1f3f4;border-radius:10px;padding:8px 12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{padding:14px}
+canvas{width:100%;height:auto;background:white;border:1px solid #eee;border-radius:12px;display:block}
+.small{font-size:14px;color:var(--muted)}
+.explain{margin-top:14px;padding:14px;background:#fff;border-left:5px solid var(--blue);border-radius:10px;line-height:1.45}
+.badge{display:inline-block;padding:4px 9px;border:1px solid var(--line);border-radius:999px;margin:0 6px 6px 0;background:#fff}
+@media(max-width:850px){.grid{grid-template-columns:1fr}input[type=range]{width:170px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Kugel mit Winkelstruktur und 2D-Orbitalschnitt</h1>
+<p><span class="formula">ψ(r,θ,φ)=R(r) · Y<sub>l</sub><sup>m</sup>(θ,φ)</span></p>
+<p><b>Idee:</b> Links sieht man eine Kugel als Modell für alle Richtungen um das Zentrum. Rechts sieht man den zugehörigen zweidimensionalen Schnitt. Die Form ist keine Bahn des Teilchens, sondern eine Darstellung der Winkelamplitude beziehungsweise der Wahrscheinlichkeitsdichte.</p>
+
+<div class="controls">
+  <label>l:
+    <input id="lSlider" type="range" min="0" max="3" step="1" value="2">
+    <span id="lVal">2</span>
+  </label>
+  <label>m:
+    <input id="mSlider" type="range" min="0" max="2" step="1" value="0">
+    <span id="mVal">0</span>
+  </label>
+  <label>Schnittwinkel:
+    <input id="angleSlider" type="range" min="0" max="180" step="1" value="0">
+    <span id="angleVal">0°</span>
+  </label>
+  <label>Phase:
+    <input id="phaseSlider" type="range" min="0" max="628" step="1" value="0">
+  </label>
+  <label><input id="densityCheck" type="checkbox" checked> |Y|² zeigen</label>
+  <button id="playBtn">▶ Animation</button>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>1) Kugelmodell</h2>
+    <canvas id="sphereCanvas" width="640" height="520"></canvas>
+    <p class="small">Die Kugel ist eine Projektion: Sie zeigt, welche Richtungen größere Werte der Winkelstruktur haben.</p>
+  </div>
+  <div class="card">
+    <h2>2) 2D-Schnitt</h2>
+    <canvas id="sliceCanvas" width="640" height="520"></canvas>
+    <p class="small">Dieser Schnitt ist die „Blütenform“. Er ist dieselbe Winkelstruktur, aber als zweidimensionale Darstellung.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <h2>Erklärung</h2>
+  <div id="badges"></div>
+  <div id="explain" class="explain"></div>
+</div>
+</div>
+
+<script>
+const sphereCanvas=document.getElementById("sphereCanvas");
+const sliceCanvas=document.getElementById("sliceCanvas");
+const sctx=sphereCanvas.getContext("2d");
+const cctx=sliceCanvas.getContext("2d");
+
+const lSlider=document.getElementById("lSlider");
+const mSlider=document.getElementById("mSlider");
+const angleSlider=document.getElementById("angleSlider");
+const phaseSlider=document.getElementById("phaseSlider");
+const densityCheck=document.getElementById("densityCheck");
+const playBtn=document.getElementById("playBtn");
+
+const lVal=document.getElementById("lVal");
+const mVal=document.getElementById("mVal");
+const angleVal=document.getElementById("angleVal");
+const badges=document.getElementById("badges");
+const explain=document.getElementById("explain");
+
+let playing=false;
+let timer=null;
+const names={0:"s",1:"p",2:"d",3:"f"};
+
+function Y(l,m,theta){
+  const c=Math.cos(theta);
+  const s=Math.sin(theta);
+  if(l===0)return 1;
+  if(l===1&&m===0)return c;
+  if(l===1&&m===1)return s;
+  if(l===2&&m===0)return 0.5*(3*c*c-1);
+  if(l===2&&m===1)return s*c;
+  if(l===2&&m===2)return s*s;
+  if(l===3&&m===0)return 0.5*(5*c*c*c-3*c);
+  if(l===3&&m===1)return s*(5*c*c-1);
+  if(l===3&&m===2)return s*s*c;
+  if(l===3&&m===3)return s*s*s;
+  return 0;
+}
+
+function clear(ctx,canvas){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle="#fff";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawSphere(){
+  const l=Number(lSlider.value);
+  const m=Number(mSlider.value);
+  const density=densityCheck.checked;
+  const phase=Number(phaseSlider.value)/100;
+  const angle=Number(angleSlider.value)*Math.PI/180;
+
+  clear(sctx,sphereCanvas);
+
+  const cx=sphereCanvas.width/2;
+  const cy=sphereCanvas.height/2+12;
+  const R=185;
+
+  // colored angular field
+  for(let iy=-R;iy<=R;iy+=3){
+    for(let ix=-R;ix<=R;ix+=3){
+      const rr2=ix*ix+iy*iy;
+      if(rr2>R*R)continue;
+
+      const theta=Math.atan2(Math.abs(ix), -iy)+Math.PI/2;
+      const val=Y(l,m,theta);
+      const radialPulse=0.75+0.25*Math.sin(0.07*Math.sqrt(rr2)+phase*3);
+      const shown=density ? val*val*radialPulse : val*radialPulse;
+      const amount=density ? shown : Math.abs(shown);
+
+      if(amount<0.01)continue;
+      const alpha=0.10+0.85*Math.min(1,amount);
+
+      sctx.fillStyle=density
+        ? `rgba(23,105,170,${alpha})`
+        : (shown>=0 ? `rgba(23,105,170,${alpha})` : `rgba(197,34,31,${alpha})`);
+
+      sctx.fillRect(cx+ix,cy+iy,3,3);
+    }
+  }
+
+  // grid
+  sctx.strokeStyle="#d8dbe0";
+  sctx.lineWidth=2;
+  sctx.beginPath();
+  sctx.arc(cx,cy,R,0,2*Math.PI);
+  sctx.stroke();
+
+  sctx.strokeStyle="rgba(90,95,100,0.18)";
+  sctx.lineWidth=1;
+
+  for(let i=-2;i<=2;i++){
+    const y=cy+i*R/3;
+    const rx=Math.sqrt(Math.max(0,R*R-(y-cy)*(y-cy)));
+    sctx.beginPath();
+    sctx.ellipse(cx,y,rx,rx*0.25,0,0,2*Math.PI);
+    sctx.stroke();
+  }
+
+  for(let i=0;i<6;i++){
+    const a=i*Math.PI/6;
+    sctx.beginPath();
+    sctx.ellipse(cx,cy,R*Math.cos(a),R,0,0,2*Math.PI);
+    sctx.stroke();
+  }
+
+  // cutting line
+  sctx.save();
+  sctx.translate(cx,cy);
+  sctx.rotate(angle);
+  sctx.strokeStyle="rgba(24,128,56,0.95)";
+  sctx.lineWidth=4;
+  sctx.setLineDash([10,7]);
+  sctx.beginPath();
+  sctx.moveTo(-R-35,0);
+  sctx.lineTo(R+35,0);
+  sctx.stroke();
+  sctx.restore();
+  sctx.setLineDash([]);
+
+  sctx.fillStyle="#202124";
+  sctx.font="16px Arial";
+  sctx.fillText(`l=${l}, m=${m}, Typ=${names[l]}`,24,34);
+  sctx.fillText(density ? "Anzeige: |Y|²" : "Anzeige: |Y|",24,58);
+}
+
+function drawSlice(){
+  const l=Number(lSlider.value);
+  const m=Number(mSlider.value);
+  const density=densityCheck.checked;
+  const angle=Number(angleSlider.value)*Math.PI/180;
+
+  clear(cctx,sliceCanvas);
+
+  const cx=sliceCanvas.width/2;
+  const cy=sliceCanvas.height/2+12;
+  const R=185;
+
+  // grid
+  cctx.strokeStyle="#e2e5e9";
+  cctx.lineWidth=1;
+  cctx.beginPath();
+  cctx.arc(cx,cy,R,0,2*Math.PI);
+  cctx.stroke();
+
+  cctx.beginPath();
+  cctx.moveTo(cx-R-35,cy);
+  cctx.lineTo(cx+R+35,cy);
+  cctx.moveTo(cx,cy-R-35);
+  cctx.lineTo(cx,cy+R+35);
+  cctx.stroke();
+
+  cctx.fillStyle="#5f6368";
+  cctx.font="14px Arial";
+  cctx.fillText("x",cx+R+45,cy+5);
+  cctx.fillText("z",cx+5,cy-R-45);
+
+  let maxVal=0;
+  const data=[];
+
+  for(let i=0;i<=1440;i++){
+    const a=2*Math.PI*i/1440;
+    const theta=(a+angle+2*Math.PI)%(2*Math.PI);
+    const val=Y(l,m,theta);
+    const amount=density ? val*val : Math.abs(val);
+    data.push({a,amount});
+    if(amount>maxVal)maxVal=amount;
+  }
+
+  if(maxVal<1e-10)maxVal=1;
+
+  cctx.beginPath();
+
+  for(let i=0;i<data.length;i++){
+    const a=data[i].a;
+    const normalized=data[i].amount/maxVal;
+    const r=Math.max(5,Math.sqrt(normalized)*R);
+    const x=cx+r*Math.cos(a);
+    const y=cy-r*Math.sin(a);
+    if(i===0)cctx.moveTo(x,y);
+    else cctx.lineTo(x,y);
+  }
+
+  cctx.closePath();
+  cctx.fillStyle=density?"rgba(23,105,170,0.25)":"rgba(197,34,31,0.20)";
+  cctx.strokeStyle=density?"#1769aa":"#c5221f";
+  cctx.lineWidth=4;
+  cctx.fill();
+  cctx.stroke();
+
+  cctx.fillStyle="#202124";
+  cctx.font="16px Arial";
+  cctx.fillText(density ? "Schnitt: |Y_l^m|²" : "Schnitt: |Y_l^m|",24,34);
+  cctx.fillText(`l=${l}, m=${m}, Typ=${names[l]}`,24,58);
+}
+
+function updateText(){
+  let l=Number(lSlider.value);
+  mSlider.max=l;
+  if(Number(mSlider.value)>l)mSlider.value=l;
+  let m=Number(mSlider.value);
+
+  lVal.textContent=l;
+  mVal.textContent=m;
+  angleVal.textContent=angleSlider.value+"°";
+
+  badges.innerHTML =
+    '<span class="badge">l = '+l+'</span>'+
+    '<span class="badge">Typ = '+names[l]+'</span>'+
+    '<span class="badge">m = '+m+'</span>'+
+    '<span class="badge">'+(densityCheck.checked?'|Y|²':'|Y|')+'</span>';
+
+  const txt={
+    0:"Bei l=0 ist die Winkelstruktur in alle Richtungen gleich. Das ist der s-Typ.",
+    1:"Bei l=1 entsteht eine gerichtete Struktur. Das ist der p-Typ.",
+    2:"Bei l=2 entstehen mehrere Bereiche und Knotenrichtungen. Das ist der d-Typ.",
+    3:"Bei l=3 wird die Winkelstruktur komplexer. Das ist der f-Typ."
+  }[l];
+
+  explain.innerHTML =
+    '<p><b>Technische Form:</b> Y<sub>'+l+'</sub><sup>'+m+'</sup>(θ,φ)</p>'+
+    '<p><b>Wörtlich:</b> Die Funktion beschreibt die Winkelabhängigkeit. Sie sagt, in welchen Richtungen die Amplitude oder die Dichte groß ist.</p>'+
+    '<p>'+txt+'</p>'+
+    '<p><b>Wichtig:</b> Rechts sieht man kein echtes 3D-Objekt, sondern einen 2D-Schnitt. Die linke Kugel hilft nur, sich vorzustellen, dass diese Richtungsstruktur ursprünglich auf einer Kugel lebt.</p>';
+}
+
+function drawAll(){
+  updateText();
+  drawSphere();
+  drawSlice();
+}
+
+[lSlider,mSlider,angleSlider,phaseSlider,densityCheck].forEach(el=>el.addEventListener("input",drawAll));
+densityCheck.addEventListener("change",drawAll);
+
+playBtn.addEventListener("click",()=>{
+  playing=!playing;
+  playBtn.textContent=playing?"⏸ Stop":"▶ Animation";
+  if(playing){
+    timer=setInterval(()=>{
+      phaseSlider.value=(Number(phaseSlider.value)+6)%629;
+      angleSlider.value=(Number(angleSlider.value)+1)%181;
+      drawAll();
+    },40);
+  }else{
+    clearInterval(timer);
+  }
+});
+
+drawAll();
+</script>
+</body>
+</html>
