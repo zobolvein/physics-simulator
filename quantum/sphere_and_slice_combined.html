@@ -74,6 +74,8 @@ canvas{width:100%;height:auto;background:white;border:1px solid #eee;border-radi
 </div>
 </div>
 
+<pre id="debugBox" style="background:#111;color:#0f0;padding:10px;border-radius:8px;white-space:pre-wrap;"></pre>
+  
 <script>
 const sphereCanvas=document.getElementById("sphereCanvas");
 const sliceCanvas=document.getElementById("sliceCanvas");
@@ -92,6 +94,12 @@ const mVal=document.getElementById("mVal");
 const angleVal=document.getElementById("angleVal");
 const badges=document.getElementById("badges");
 const explain=document.getElementById("explain");
+
+const debugBox=document.getElementById("debugBox");
+
+function debug(msg){
+  debugBox.textContent += msg + "\n";
+}
 
 let playing=false;
 let timer=null;
@@ -301,9 +309,24 @@ function updateText(){
 }
 
 function drawAll(){
-  updateText();
-  drawSphere();
-  drawSlice();
+  debugBox.textContent = "";
+
+  try {
+    debug("1 updateText start");
+    updateText();
+    debug("2 updateText ok");
+
+    debug("3 drawSphere start");
+    drawSphere();
+    debug("4 drawSphere ok");
+
+    debug("5 drawSlice start");
+    drawSlice();
+    debug("6 drawSlice ok");
+  } catch (err) {
+    debug("ERROR: " + err.message);
+    debug(err.stack || "");
+  }
 }
 
 [lSlider,mSlider,angleSlider,phaseSlider,densityCheck].forEach(el=>el.addEventListener("input",drawAll));
