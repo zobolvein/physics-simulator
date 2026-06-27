@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slice only: Orbitalschnitt</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#202124;--muted:#5f6368;--line:#dadce0;--blue:#1769aa;--red:#c5221f}
+*{box-sizing:border-box}
+body{margin:0;padding:18px;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+.wrap{max-width:980px;margin:0 auto}
+h1{font-size:26px;margin:0 0 8px}
+p{line-height:1.45}
+.controls,.card{background:var(--card);border:1px solid var(--line);border-radius:14px}
+.controls{padding:14px;margin:14px 0;display:flex;flex-wrap:wrap;align-items:center;gap:16px}
+label{font-weight:650}
+input[type=range]{width:220px;vertical-align:middle}
+button,input{font-size:16px}
+button{border:1px solid var(--line);background:#f1f3f4;border-radius:10px;padding:8px 12px}
+.card{padding:14px}
+canvas{width:100%;height:auto;background:white;border:1px solid #eee;border-radius:12px;display:block}
+.small{font-size:14px;color:var(--muted)}
+.badge{display:inline-block;padding:4px 9px;border:1px solid var(--line);border-radius:999px;margin:0 6px 6px 0;background:#fff}
+.explain{margin-top:14px;padding:14px;background:#fff;border-left:5px solid var(--blue);border-radius:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Orbitalschnitt: „Blütenform“</h1>
+<p><b>Ziel:</b> Diese Seite zeigt nur den zweidimensionalen Schnitt der Winkelstruktur. Wenn diese Seite funktioniert, kann der Schnitt später wieder in die große Kugel-Demo eingebaut werden.</p>
+
+<div class="controls">
+  <label>l:
+    <input id="lSlider" type="range" min="0" max="3" step="1" value="2">
+    <span id="lVal">2</span>
+  </label>
+
+  <label>m:
+    <input id="mSlider" type="range" min="0" max="2" step="1" value="0">
+    <span id="mVal">0</span>
+  </label>
+
+  <label>Schnittwinkel:
+    <input id="angleSlider" type="range" min="0" max="180" step="1" value="0">
+    <span id="angleVal">0°</span>
+  </label>
+
+  <label>
+    <input id="densityCheck" type="checkbox" checked>
+    |Y|² zeigen
+  </label>
+</div>
+
+<div class="card">
+  <canvas id="plot" width="900" height="650"></canvas>
+  <p class="small">Das ist keine Bahn des Teilchens. Die Form zeigt Richtungen mit größerer oder kleinerer Winkelamplitude beziehungsweise Wahrscheinlichkeitsdichte.</p>
+</div>
+
+<div class="card" style="margin-top:14px">
+  <div id="badges"></div>
+  <div id="explain" class="explain"></div>
+</div>
+</div>
+
+<script>
+const canvas = document.getElementById("plot");
+const ctx = canvas.getContext("2d");
+
+const lSlider = document.getElementById("lSlider");
+const mSlider = document.getElementById("mSlider");
+const angleSlider = document.getElementById("angleSlider");
+const densityCheck = document.getElementById("densityCheck");
+
+const lVal = document.getElementById("lVal");
+const mVal = document.getElementById("mVal");
+const angleVal = document.getElementById("angleVal");
+const badges = document.getElementById("badges");
+const explain = document.getElementById("explain");
+
+const names = {0:"s",1:"p",2:"d",3:"f"};
+
+function Y(l,m,theta){
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+
+  if(l === 0) return 1;
+
+  if(l === 1 && m === 0) return c;
+  if(l === 1 && m === 1) return s;
+
+  if(l === 2 && m === 0) return 0.5 * (3*c*c - 1);
+  if(l === 2 && m === 1) return s*c;
+  if(l === 2 && m === 2) return s*s;
+
+  if(l === 3 && m === 0) return 0.5 * (5*c*c*c - 3*c);
+  if(l === 3 && m === 1) return s * (5*c*c - 1);
+  if(l === 3 && m === 2) return s*s*c;
+  if(l === 3 && m === 3) return s*s*s;
+
+  return 0;
+}
+
+function clear(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+}
+
+function drawGrid(cx, cy, R){
+  ctx.strokeStyle = "#e2e5e9";
+  ctx.lineWidth = 1;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, 2*Math.PI);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(cx-R-40, cy);
+  ctx.lineTo(cx+R+40, cy);
+  ctx.moveTo(cx, cy-R-40);
+  ctx.lineTo(cx, cy+R+40);
+  ctx.stroke();
+
+  ctx.fillStyle = "#5f6368";
+  ctx.font = "14px Arial";
+  ctx.fillText("x", cx+R+50, cy+5);
+  ctx.fillText("z", cx+5, cy-R-50);
+}
+
+function drawFlower(){
+  const l = Number(lSlider.value);
+  mSlider.max = l;
+  if(Number(mSlider.value) > l) mSlider.value = l;
+  const m = Number(mSlider.value);
+  const angle = Number(angleSlider.value) * Math.PI / 180;
+  const density = densityCheck.checked;
+
+  lVal.textContent = l;
+  mVal.textContent = m;
+  angleVal.textContent = angleSlider.value + "°";
+
+  clear();
+
+  const cx = canvas.width/2;
+  const cy = canvas.height/2 + 20;
+  const R = 245;
+
+  drawGrid(cx, cy, R);
+
+  let maxVal = 0;
+  const data = [];
+
+  for(let i=0; i<=1440; i++){
+    const a = 2*Math.PI*i/1440;
+    const theta = (a + angle + 2*Math.PI) % (2*Math.PI);
+    const y = Y(l,m,theta);
+    const amount = density ? y*y : Math.abs(y);
+    data.push({a, amount});
+    if(amount > maxVal) maxVal = amount;
+  }
+
+  if(maxVal < 1e-10) maxVal = 1;
+
+  ctx.beginPath();
+
+  for(let i=0; i<data.length; i++){
+    const a = data[i].a;
+    const normalized = data[i].amount / maxVal;
+    const r = Math.max(5, Math.sqrt(normalized) * R);
+    const x = cx + r * Math.cos(a);
+    const y = cy - r * Math.sin(a);
+
+    if(i === 0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+
+  ctx.closePath();
+  ctx.fillStyle = density ? "rgba(23,105,170,0.25)" : "rgba(197,34,31,0.20)";
+  ctx.strokeStyle = density ? "#1769aa" : "#c5221f";
+  ctx.lineWidth = 4;
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#202124";
+  ctx.font = "18px Arial";
+  ctx.fillText(density ? "Schnitt: |Y_l^m|²" : "Schnitt: |Y_l^m|", 28, 34);
+  ctx.fillText("l = " + l + ", m = " + m + ", Typ = " + names[l], 28, 60);
+
+  badges.innerHTML =
+    '<span class="badge">l = ' + l + '</span>' +
+    '<span class="badge">Typ = ' + names[l] + '</span>' +
+    '<span class="badge">m = ' + m + '</span>' +
+    '<span class="badge">' + (density ? '|Y|²' : '|Y|') + '</span>';
+
+  explain.innerHTML =
+    '<p><b>Technische Form:</b> Y<sub>' + l + '</sub><sup>' + m + '</sup>(θ,φ)</p>' +
+    '<p><b>Wörtlich:</b> Diese Funktion beschreibt die Winkelstruktur. In diesem Diagramm wird daraus ein Schnitt gemacht.</p>' +
+    '<p><b>Interpretation:</b> Große Bereiche bedeuten: in diese Richtungen ist die Amplitude beziehungsweise die Wahrscheinlichkeitsdichte größer. Weiße/enge Bereiche entsprechen Knoten oder kleinen Werten.</p>';
+}
+
+[lSlider, mSlider, angleSlider, densityCheck].forEach(el => el.addEventListener("input", drawFlower));
+densityCheck.addEventListener("change", drawFlower);
+
+drawFlower();
+</script>
+</body>
+</html>
