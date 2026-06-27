@@ -134,10 +134,13 @@ function drawSphere(cx,cy,R){
     ctx.beginPath(); ctx.ellipse(cx,y,rx,rx*0.25,0,0,2*Math.PI); ctx.stroke();
   }
   for(let i=0;i<6;i++){
-    const a=i*Math.PI/6;
-    ctx.beginPath(); ctx.ellipse(cx,cy,R*Math.cos(a),R,0,0,2*Math.PI); ctx.stroke();
-  }
-
+  const a=i*Math.PI/6;
+  const rx=Math.abs(R*Math.cos(a));
+  if(rx<1) continue;
+  ctx.beginPath();
+  ctx.ellipse(cx,cy,rx,R,0,0,2*Math.PI);
+  ctx.stroke();
+}
   ctx.save(); ctx.translate(cx,cy); ctx.rotate(cutAngle);
   ctx.strokeStyle="rgba(24,128,56,0.95)"; ctx.lineWidth=4; ctx.setLineDash([10,7]);
   ctx.beginPath(); ctx.moveTo(-R-35,0); ctx.lineTo(R+35,0); ctx.stroke();
