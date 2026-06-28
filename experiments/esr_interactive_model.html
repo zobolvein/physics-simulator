@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ESR Interactive Model</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#ffffff; --ink:#172033; --muted:#5d667a;
+    --blue:#2563eb; --red:#dc2626; --green:#16a34a; --orange:#ea580c;
+    --line:#d7dce8; --soft:#eef2ff; --shadow:0 10px 30px rgba(15,23,42,.10);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.45}
+  header{padding:24px 18px 10px;text-align:center}
+  h1{margin:0 0 8px;font-size:clamp(26px,4vw,42px)}
+  .subtitle{max-width:980px;margin:0 auto;color:var(--muted);font-size:17px}
+  .wrap{max-width:1240px;margin:0 auto;padding:18px;display:grid;grid-template-columns:340px 1fr;gap:18px}
+  .panel,.viz,.explain{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+  .panel{padding:18px;position:sticky;top:10px;align-self:start}
+  .control{margin:18px 0}
+  label{display:flex;justify-content:space-between;gap:10px;font-weight:700;margin-bottom:8px}
+  input[type="range"]{width:100%}
+  .value{font-variant-numeric:tabular-nums;color:var(--blue)}
+  .btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+  button{border:0;border-radius:12px;padding:12px 14px;font-weight:800;cursor:pointer;background:var(--blue);color:white}
+  button.secondary{background:#334155}
+  button.warn{background:var(--orange)}
+  button:active{transform:translateY(1px)}
+  .status{padding:12px;border-radius:12px;background:var(--soft);border:1px solid #c7d2fe;margin-top:14px;color:#1e3a8a;font-weight:700}
+  .viz{padding:14px}
+  canvas{width:100%;height:620px;display:block;border-radius:14px;background:linear-gradient(180deg,#ffffff,#f8fafc)}
+  .cards{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+  .explain{padding:18px}
+  h2{margin:0 0 10px;font-size:24px}
+  h3{margin:18px 0 8px;color:#111827}
+  p{margin:8px 0}
+  .formula{background:#0f172a;color:#f8fafc;border-radius:12px;padding:12px 14px;margin:10px 0;font-family:Cambria,Times New Roman,serif;font-size:20px;overflow-x:auto}
+  ul{padding-left:20px}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;color:var(--muted);font-size:14px}
+  .dot{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr}.panel{position:static}.cards{grid-template-columns:1fr}canvas{height:760px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Elektronenspinresonanz: интерактивная модель</h1>
+  <p class="subtitle">Показываем причинную цепочку: постоянное магнитное поле разделяет спиновые энергетические уровни, а переменное высокочастотное поле вызывает переход между ними.</p>
+</header>
+
+<main class="wrap">
+  <section class="panel">
+    <h2>Управление</h2>
+
+    <div class="control">
+      <label for="B">Постоянное поле B <span class="value" id="Bval">1.00 mT</span></label>
+      <input id="B" type="range" min="0" max="3" step="0.01" value="1.00" />
+      <p>Это поле создаёт расщепление уровней: чем больше B, тем больше расстояние между уровнями.</p>
+    </div>
+
+    <div class="control">
+      <label for="nu">Частота переменного поля ν <span class="value" id="nuval">28.0 MHz</span></label>
+      <input id="nu" type="range" min="0" max="100" step="0.1" value="28.0" />
+      <p>Это поле «подталкивает» электрон. Переход происходит только около резонансной частоты.</p>
+    </div>
+
+    <div class="control">
+      <label for="drive">Амплитуда HF-поля <span class="value" id="driveval">70%</span></label>
+      <input id="drive" type="range" min="0" max="1" step="0.01" value="0.70" />
+      <p>Большая амплитуда делает возбуждение заметнее, но не меняет саму резонансную частоту.</p>
+    </div>
+
+    <div class="btns">
+      <button id="play">▶ Старт</button>
+      <button id="pause" class="secondary">⏸ Пауза</button>
+      <button id="reset" class="warn">↺ Сброс</button>
+      <button id="auto" class="secondary">Автоскан ν</button>
+    </div>
+
+    <div class="status" id="status">Настрой параметры и нажми «Старт».</div>
+
+    <div class="legend">
+      <span><span class="dot" style="background:#2563eb"></span>постоянное поле B</span>
+      <span><span class="dot" style="background:#dc2626"></span>HF-поле</span>
+      <span><span class="dot" style="background:#16a34a"></span>резонанс</span>
+    </div>
+  </section>
+
+  <section class="viz">
+    <canvas id="canvas" width="1100" height="620"></canvas>
+  </section>
+
+  <section class="cards">
+    <article class="explain">
+      <h2>Что сейчас показывает модель</h2>
+      <p id="dynamicText">Пока магнитное поле не равно нулю, один исходный уровень разделяется на два спиновых уровня.</p>
+      <h3>Техническая форма</h3>
+      <div class="formula">ΔE = g<sub>s</sub> · μ<sub>B</sub> · |B|</div>
+      <p><b>Словесно:</b> разность энергий между двумя спиновыми состояниями пропорциональна магнитному полю. Поэтому ползунок B прямо растягивает расстояние между уровнями.</p>
+      <h3>Резонансное условие</h3>
+      <div class="formula">ν<sub>res</sub> = ΔE / h</div>
+      <p><b>Словесно:</b> переменное поле вызывает переход, если его частота соответствует энергии перехода. Не «любая волна толкает электрон», а только подходящая по энергии.</p>
+    </article>
+
+    <article class="explain">
+      <h2>Как это сказать устно</h2>
+      <p>Сначала постоянное магнитное поле снимает вырождение: два состояния спина, которые без поля имели одинаковую энергию, становятся двумя разными уровнями.</p>
+      <p>Затем мы добавляем высокочастотное переменное поле. Если его частота совпадает с энергетическим расстоянием между уровнями, электрон поглощает энергию и переходит из одного состояния в другое.</p>
+      <p>В эксперименте это видно не напрямую как «прыжок электрона», а как изменение нагрузки HF-колебательного контура. Поэтому на осциллографе появляется резонансный сигнал.</p>
+    </article>
+  </section>
+</main>
+
+<script>
+(function(){
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const B = document.getElementById('B');
+  const nu = document.getElementById('nu');
+  const drive = document.getElementById('drive');
+  const Bval = document.getElementById('Bval');
+  const nuval = document.getElementById('nuval');
+  const driveval = document.getElementById('driveval');
+  const status = document.getElementById('status');
+  const dynamicText = document.getElementById('dynamicText');
+  const play = document.getElementById('play');
+  const pause = document.getElementById('pause');
+  const reset = document.getElementById('reset');
+  const auto = document.getElementById('auto');
+
+  let running = false;
+  let autoscan = false;
+  let t = 0;
+  let spinPhase = 0;
+  let transition = 0;
+  const gammaMHzPerMT = 28.0; // simplified ESR relation for electron, about 28 MHz/mT
+
+  function val(el){ return parseFloat(el.value); }
+  function resonanceFrequency(){ return gammaMHzPerMT * val(B); }
+  function mismatch(){ return Math.abs(val(nu) - resonanceFrequency()); }
+  function resonanceStrength(){
+    const width = 3.2;
+    const m = mismatch();
+    return Math.exp(-(m*m)/(2*width*width)) * val(drive) * (val(B) > 0.03 ? 1 : 0);
+  }
+  function updateLabels(){
+    Bval.textContent = val(B).toFixed(2) + ' mT';
+    nuval.textContent = val(nu).toFixed(1) + ' MHz';
+    driveval.textContent = Math.round(val(drive)*100) + '%';
+    const nres = resonanceFrequency();
+    const r = resonanceStrength();
+    if(val(B) < 0.03){
+      status.textContent = 'B почти ноль: уровни почти не разделены.';
+      dynamicText.textContent = 'Когда постоянное магнитное поле почти равно нулю, спиновые состояния почти не различаются по энергии. Переход нечёткий, потому что нет заметного энергетического зазора.';
+    } else if(r > 0.55){
+      status.textContent = 'Резонанс: ν ≈ νres = ' + nres.toFixed(1) + ' MHz. Электрон поглощает энергию.';
+      dynamicText.textContent = 'Сейчас частота переменного поля почти совпадает с резонансной частотой. Поэтому энергия поля подходит к расстоянию между уровнями, и переход становится вероятным.';
+    } else {
+      status.textContent = 'Нет резонанса: νres = ' + nres.toFixed(1) + ' MHz, а ν = ' + val(nu).toFixed(1) + ' MHz.';
+      dynamicText.textContent = 'Уровни уже разделены постоянным магнитным полем, но частота переменного поля пока не совпадает с энергетическим зазором. Поэтому электрон почти не переходит между уровнями.';
+    }
+  }
+
+  function line(x1,y1,x2,y2,color,w=2){ctx.strokeStyle=color;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
+  function text(s,x,y,size=18,color='#172033',align='left',weight='500'){
+    ctx.fillStyle=color;ctx.font=weight+' '+size+'px system-ui, -apple-system, Segoe UI, Arial';ctx.textAlign=align;ctx.fillText(s,x,y);
+  }
+  function roundRect(x,y,w,h,r,fill,stroke){
+    ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+    if(fill){ctx.fillStyle=fill;ctx.fill();} if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke();}
+  }
+  function arrow(x1,y1,x2,y2,color,w=3){
+    line(x1,y1,x2,y2,color,w);
+    const a=Math.atan2(y2-y1,x2-x1),len=12;
+    ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(x2,y2);ctx.lineTo(x2-len*Math.cos(a-Math.PI/6),y2-len*Math.sin(a-Math.PI/6));ctx.lineTo(x2-len*Math.cos(a+Math.PI/6),y2-len*Math.sin(a+Math.PI/6));ctx.closePath();ctx.fill();
+  }
+
+  function drawEnergyLevels(x,y,w,h){
+    roundRect(x,y,w,h,16,'#ffffff','#d7dce8');
+    text('1. Энергетические уровни',x+18,y+34,20,'#111827','left','800');
+    text('B разделяет один уровень на два',x+18,y+60,14,'#5d667a');
+    const centerY = y+h/2+15;
+    const split = Math.min(150, val(B)*50);
+    const yUp = centerY - split/2;
+    const yDown = centerY + split/2;
+    line(x+80, centerY, x+w-80, centerY, '#cbd5e1', 2);
+    if(split < 3){
+      line(x+95, centerY, x+w-95, centerY, '#2563eb', 5);
+      text('E: состояние вырождено',x+w/2,centerY-18,16,'#2563eb','center','800');
+    } else {
+      line(x+95,yUp,x+w-95,yUp,'#dc2626',5);
+      line(x+95,yDown,x+w-95,yDown,'#2563eb',5);
+      text('mₛ = +1/2',x+w-80,yUp+5,16,'#dc2626');
+      text('mₛ = −1/2',x+w-80,yDown+5,16,'#2563eb');
+      arrow(x+w/2,yDown-8,x+w/2,yUp+8, resonanceStrength()>0.45?'#16a34a':'#94a3b8', resonanceStrength()>0.45?5:2);
+      text('ΔE ∝ B',x+w/2+20,centerY+5,18,resonanceStrength()>0.45?'#16a34a':'#334155','left','800');
+    }
+  }
+
+  function drawElectron(x,y,w,h){
+    roundRect(x,y,w,h,16,'#ffffff','#d7dce8');
+    text('2. Спин электрона',x+18,y+34,20,'#111827','left','800');
+    text('при резонансе стрелка меняет состояние',x+18,y+60,14,'#5d667a');
+    const cx=x+w/2, cy=y+h/2+20;
+    ctx.fillStyle='#e0f2fe'; ctx.beginPath(); ctx.arc(cx,cy,58,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#2563eb'; ctx.lineWidth=3; ctx.stroke();
+    const r = resonanceStrength();
+    if(r>0.25 && running) spinPhase += 0.03 + r*0.10;
+    const angle = -Math.PI/2 + Math.sin(spinPhase)*Math.PI*r;
+    const x2=cx+Math.cos(angle)*70, y2=cy+Math.sin(angle)*70;
+    arrow(cx,cy,x2,y2,r>0.55?'#16a34a':'#2563eb',6);
+    text('e⁻',cx,cy+8,28,'#1e3a8a','center','900');
+    text(r>0.55?'переход идёт':'переход слабый',cx,cy+105,18,r>0.55?'#16a34a':'#64748b','center','800');
+  }
+
+  function drawWaveAndOscilloscope(x,y,w,h){
+    roundRect(x,y,w,h,16,'#ffffff','#d7dce8');
+    text('3. HF-поле и сигнал',x+18,y+34,20,'#111827','left','800');
+    text('ν выбирает, попадём ли в резонанс',x+18,y+60,14,'#5d667a');
+    const baseY=y+145, amp=30*val(drive), freq=0.018+val(nu)/2600;
+    ctx.strokeStyle='#dc2626';ctx.lineWidth=3;ctx.beginPath();
+    for(let i=0;i<w-60;i++){
+      const xx=x+30+i;
+      const yy=baseY+Math.sin(i*freq*20+t*0.08)*amp;
+      if(i===0)ctx.moveTo(xx,yy); else ctx.lineTo(xx,yy);
+    }
+    ctx.stroke();
+    text('переменное поле ν = '+val(nu).toFixed(1)+' MHz',x+30,baseY-45,16,'#dc2626','left','800');
+
+    const ox=x+45, oy=y+h-115, ow=w-90, oh=75;
+    roundRect(ox,oy,ow,oh,10,'#0f172a','#0f172a');
+    ctx.strokeStyle='#22c55e';ctx.lineWidth=2;ctx.beginPath();
+    const r=resonanceStrength();
+    for(let i=0;i<ow-24;i++){
+      const xx=ox+12+i;
+      const peak = r*45*Math.exp(-Math.pow((i-(ow-24)/2)/45,2));
+      const yy=oy+oh/2 - peak + Math.sin(i*0.08+t*0.05)*3;
+      if(i===0)ctx.moveTo(xx,yy); else ctx.lineTo(xx,yy);
+    }
+    ctx.stroke();
+    text('осциллограф: ESR-пик',ox+ow/2,oy+oh+24,15,'#334155','center','800');
+    if(r>0.55) text('RESONANZ',x+w/2,y+110,28,'#16a34a','center','900');
+  }
+
+  function drawProcess(x,y,w,h){
+    roundRect(x,y,w,h,16,'#ffffff','#d7dce8');
+    text('4. Причинная цепочка',x+18,y+34,20,'#111827','left','800');
+    const steps=[
+      ['B ≠ 0','уровни разделены','#2563eb'],
+      ['HF-поле','даёт энергию hν','#dc2626'],
+      ['ν ≈ ΔE/h','условие резонанса','#16a34a'],
+      ['сигнал','меняется импеданс','#ea580c']
+    ];
+    const gap=(w-60)/4;
+    for(let i=0;i<steps.length;i++){
+      const sx=x+30+i*gap, sy=y+92;
+      roundRect(sx,sy,gap-16,86,12,'#f8fafc','#d7dce8');
+      text(steps[i][0],sx+(gap-16)/2,sy+32,18,steps[i][2],'center','900');
+      text(steps[i][1],sx+(gap-16)/2,sy+60,13,'#475569','center','600');
+      if(i<steps.length-1) arrow(sx+gap-16,sy+43,sx+gap-2,sy+43,'#94a3b8',2);
+    }
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    drawEnergyLevels(20,20,510,270);
+    drawElectron(555,20,525,270);
+    drawWaveAndOscilloscope(20,315,510,280);
+    drawProcess(555,315,525,280);
+  }
+
+  function tick(){
+    if(running){
+      t += 1;
+      if(autoscan){
+        let nv = val(nu) + 0.18;
+        if(nv>100) nv=0;
+        nu.value = nv.toFixed(1);
+      }
+    }
+    transition = resonanceStrength();
+    updateLabels();
+    draw();
+    requestAnimationFrame(tick);
+  }
+
+  [B,nu,drive].forEach(el=>el.addEventListener('input',()=>{updateLabels();draw();}));
+  play.addEventListener('click',()=>{running=true;});
+  pause.addEventListener('click',()=>{running=false;});
+  reset.addEventListener('click',()=>{running=false;autoscan=false;t=0;spinPhase=0;B.value=1.00;nu.value=28.0;drive.value=0.70;updateLabels();draw();});
+  auto.addEventListener('click',()=>{autoscan=!autoscan;running=true;auto.textContent=autoscan?'Стоп скан':'Автоскан ν';});
+
+  updateLabels(); draw(); tick();
+})();
+</script>
+</body>
+</html>
